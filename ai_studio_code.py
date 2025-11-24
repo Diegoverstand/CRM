@@ -3,413 +3,503 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from io import BytesIO
-from datetime import datetime
+from datetime import datetime, timedelta
+import numpy as np
 
-# --- CONFIGURACIÓN DE PÁGINA ---
+# --- 1. CONFIGURACIÓN Y ESTILOS CORPORATIVOS ---
 st.set_page_config(
-    page_title="Sistema de Gestión Integral QD",
+    page_title="QD Corporate ERP",
     layout="wide",
-    page_icon="📈",
+    page_icon="🏢",
     initial_sidebar_state="expanded"
 )
 
-# --- ESTILOS CSS PERSONALIZADOS ---
 st.markdown("""
 <style>
-    .metric-container {
-        background-color: #f8f9fa;
-        border: 1px solid #e9ecef;
+    /* Estilos Responsive y Corporativos */
+    .block-container {padding-top: 1rem; padding-bottom: 2rem;}
+    .metric-card {
+        background-color: #ffffff;
+        border: 1px solid #e0e0e0;
         padding: 15px;
-        border-radius: 10px;
-        border-left: 5px solid #4F8BF9;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
         margin-bottom: 10px;
     }
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 10px;
-    }
+    h1, h2, h3 {font-family: 'Helvetica Neue', sans-serif; color: #2c3e50;}
+    .stTabs [data-baseweb="tab-list"] {gap: 5px;}
     .stTabs [data-baseweb="tab"] {
-        height: 50px;
-        white-space: pre-wrap;
-        background-color: #f0f2f6;
-        border-radius: 5px;
-        color: #31333F;
-        font-weight: 600;
+        height: 45px;
+        background-color: #f8f9fa;
+        border-radius: 4px 4px 0 0;
+        font-size: 14px;
     }
     .stTabs [data-baseweb="tab"][aria-selected="true"] {
-        background-color: #4F8BF9;
+        background-color: #2c3e50;
         color: white;
     }
+    /* Alertas visuales */
+    .alert-danger {color: #721c24; background-color: #f8d7da; padding: 10px; border-radius: 5px;}
+    .alert-success {color: #155724; background-color: #d4edda; padding: 10px; border-radius: 5px;}
 </style>
 """, unsafe_allow_html=True)
 
-# --- FUNCIONES DE UTILIDAD ---
-def convert_df_to_excel(df):
-    """Convierte DataFrame a Excel en memoria para descarga."""
-    output = BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df.to_excel(writer, index=False, sheet_name='Sheet1')
-    processed_data = output.getvalue()
-    return processed_data
+# --- 2. GESTIÓN DE ESTADO Y DATOS (DATABASE MOCKUP) ---
 
-def get_semaphor_color(val, target, inverse=False):
-    """Determina color para BSC (Rojo/Amarillo/Verde)."""
-    if inverse:
-        if val <= target: return "green"
-        elif val <= target * 1.1: return "orange"
-        else: return "red"
-    else:
-        if val >= target: return "green"
-        elif val >= target * 0.9: return "orange"
-        else: return "red"
+def init_session_state():
+    # A. LIBRO DIARIO (Transacciones Reales)
+    if 'ledger' not in st.session_state:
+        # Estructura compatible con IFRS
+        data = [
+            # Activos Iniciales (Apertura)
+            {'Fecha': datetime(2023, 1, 1), 'Concepto': 'Capital Inicial', 'Entidad': 'Socios', 'Tipo': 'Patrimonio', 'Clasificacion_NIC': 'Capital Social', 'Monto': 50000000, 'Proyecto': 'General', 'Estado': 'Pagado'},
+            {'Fecha': datetime(2023, 1, 1), 'Concepto': 'Saldo Banco', 'Entidad': 'Banco Chile', 'Tipo': 'Activo', 'Clasificacion_NIC': 'Efectivo y Equivalentes', 'Monto': 20000000, 'Proyecto': 'General', 'Estado': 'Pagado'},
+            # Operaciones
+            {'Fecha': datetime(2023, 10, 5), 'Concepto': 'Servicio Consultoría A', 'Entidad': 'Cliente A', 'Tipo': 'Ingreso', 'Clasificacion_NIC': 'Ingresos Ordinarios', 'Monto': 15000000, 'Proyecto': 'Consultoría X', 'Estado': 'Cobrado'},
+            {'Fecha': datetime(2023, 10, 10), 'Concepto': 'Licencias Azure', 'Entidad': 'Microsoft', 'Tipo': 'Gasto', 'Clasificacion_NIC': 'Gastos de Administración', 'Monto': -800000, 'Proyecto': 'General', 'Estado': 'Pagado'},
+            {'Fecha': datetime(2023, 10, 12), 'Concepto': 'Nómina Octubre', 'Entidad': 'Personal', 'Tipo': 'Gasto', 'Clasificacion_NIC': 'Beneficios a Empleados', 'Monto': -6000000, 'Proyecto': 'General', 'Estado': 'Pagado'},
+            {'Fecha': datetime(2023, 10, 15), 'Concepto': 'Compra Laptops', 'Entidad': 'PC Factory', 'Tipo': 'Activo', 'Clasificacion_NIC': 'Propiedad, Planta y Equipo', 'Monto': -4000000, 'Proyecto': 'General', 'Estado': 'Pagado'},
+        ]
+        st.session_state['ledger'] = pd.DataFrame(data)
 
-# --- INICIALIZACIÓN DE ESTADO (SESSION STATE) ---
-if 'financial_data' not in st.session_state:
-    # Datos semilla con estructura avanzada (incluye Costo Fijo/Variable)
-    data_fin = [
-        {'Fecha': datetime(2023, 10, 1), 'Concepto': 'Factura Cliente A', 'Tipo': 'Ingreso', 'Categoria': 'Ventas', 'Comportamiento': 'Variable', 'Monto': 15000000, 'Proyecto': 'Consultoría X'},
-        {'Fecha': datetime(2023, 10, 5), 'Concepto': 'Nómina Consultores', 'Tipo': 'Egreso', 'Categoria': 'RRHH', 'Comportamiento': 'Fijo', 'Monto': 6000000, 'Proyecto': 'General'},
-        {'Fecha': datetime(2023, 10, 10), 'Concepto': 'Licencias Cloud', 'Tipo': 'Egreso', 'Categoria': 'Tecnología', 'Comportamiento': 'Fijo', 'Monto': 800000, 'Proyecto': 'General'},
-        {'Fecha': datetime(2023, 10, 12), 'Concepto': 'Subcontrato Diseño', 'Tipo': 'Egreso', 'Categoria': 'Costo Directo', 'Comportamiento': 'Variable', 'Monto': 2500000, 'Proyecto': 'Consultoría X'},
-        {'Fecha': datetime(2023, 10, 20), 'Concepto': 'Arriendo Oficina', 'Tipo': 'Egreso', 'Categoria': 'Infraestructura', 'Comportamiento': 'Fijo', 'Monto': 1200000, 'Proyecto': 'General'},
-        {'Fecha': datetime(2023, 10, 25), 'Concepto': 'Factura Cliente B', 'Tipo': 'Ingreso', 'Categoria': 'Ventas', 'Comportamiento': 'Variable', 'Monto': 9000000, 'Proyecto': 'Implementación Y'},
-    ]
-    st.session_state['financial_data'] = pd.DataFrame(data_fin)
+    # B. PIPELINE COMERCIAL (CRM)
+    if 'pipeline' not in st.session_state:
+        data_pipe = [
+            {'Cliente': 'Alpha Corp', 'Proyecto': 'Migración Cloud', 'Etapa': 'Negociación', 'Valor': 25000000, 'Probabilidad': 70, 'Fecha_Cierre': datetime(2023, 12, 15), 'Horas_Est': 200},
+            {'Cliente': 'Beta Ltd', 'Proyecto': 'Auditoría Seg.', 'Etapa': 'Propuesta', 'Valor': 8000000, 'Probabilidad': 40, 'Fecha_Cierre': datetime(2024, 1, 20), 'Horas_Est': 80},
+        ]
+        st.session_state['pipeline'] = pd.DataFrame(data_pipe)
 
-if 'commercial_data' not in st.session_state:
-    data_com = [
-        {'Cliente': 'Alpha Corp', 'Servicio': 'Estrategia', 'Etapa': 'Propuesta', 'Valor': 5000000, 'Probabilidad': 60},
-        {'Cliente': 'Beta Inc', 'Servicio': 'Auditoría', 'Etapa': 'Negociación', 'Valor': 2500000, 'Probabilidad': 80},
-        {'Cliente': 'Gamma Ltd', 'Servicio': 'Desarrollo', 'Etapa': 'Lead', 'Valor': 12000000, 'Probabilidad': 20},
-    ]
-    st.session_state['commercial_data'] = pd.DataFrame(data_com)
+    # C. CARTERA DE PROYECTOS & PRICING (Base de Datos de Proyectos Aprobados/Guardados)
+    if 'projects_db' not in st.session_state:
+        st.session_state['projects_db'] = pd.DataFrame(columns=[
+            'Nombre_Proyecto', 'Cliente', 'Estado', 'Ingresos_Est', 'Costos_Directos_Est', 'Margen_Est', 'Horas_Est', 'Horas_Reales', 'Fecha_Inicio'
+        ])
+    
+    # D. LIBRERÍA DE VARIABLES DE COSTOS (Para Pricing)
+    if 'cost_library' not in st.session_state:
+        st.session_state['cost_library'] = pd.DataFrame([
+            {'Nombre': 'Hora Developer Senior', 'Unidad': 'Hora', 'Costo_Unitario': 45000, 'Categoria': 'RRHH'},
+            {'Hora': 'Hora Consultor Junior', 'Unidad': 'Hora', 'Costo_Unitario': 25000, 'Categoria': 'RRHH'},
+            {'Nombre': 'Licencia PowerBI', 'Unidad': 'Mensual', 'Costo_Unitario': 15000, 'Categoria': 'Software'},
+        ])
 
-# --- SIDEBAR ---
+    # E. VARIABLES GLOBALES DE CONFIGURACIÓN
+    if 'config' not in st.session_state:
+        st.session_state['config'] = {'capacidad_horas_mensual': 600} # Ejemplo: 4 personas * 150 hrs
+
+init_session_state()
+
+# --- 3. FUNCIONES CORE ---
+
+def classify_expense_auto(concepto):
+    """Clasificador simple basado en IFRS/NIC sugerido"""
+    concepto = concepto.lower()
+    mapping = {
+        'taxi': 'Gastos de Viaje', 'uber': 'Gastos de Viaje', 'vuelo': 'Gastos de Viaje',
+        'almuerzo': 'Gastos de Representación', 'restaurante': 'Gastos de Representación',
+        'nómina': 'Beneficios a Empleados', 'sueldo': 'Beneficios a Empleados',
+        'licencia': 'Amortización Intangibles', 'software': 'Amortización Intangibles',
+        'computador': 'Propiedad, Planta y Equipo', 'silla': 'Propiedad, Planta y Equipo',
+        'arriendo': 'Gastos por Arrendamiento (NIIF 16)', 'oficina': 'Gastos por Arrendamiento (NIIF 16)',
+        'banco': 'Gastos Financieros', 'interés': 'Gastos Financieros'
+    }
+    for key, val in mapping.items():
+        if key in concepto:
+            return val
+    return "Otros Gastos Operacionales"
+
+def generate_financial_report(df, period='M'):
+    """Genera reportes agrupados por periodo"""
+    df['Periodo'] = df['Fecha'].dt.to_period(period).astype(str)
+    return df
+
+# --- 4. UI: SIDEBAR & NAVEGACIÓN ---
 with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/2830/2830303.png", width=60)
-    st.title("Gestión QD")
+    st.title("QD Corporate System")
+    st.caption("v.3.5.0 - Enterprise Edition")
+    
+    menu = st.radio("Módulos", [
+        "1. Operaciones Diarias (Gastos)", 
+        "2. Finanzas Deep Dive", 
+        "3. Pricing & Cartera",
+        "4. Proyecciones & Escenarios",
+        "5. Tablero BSC"
+    ])
+    
     st.markdown("---")
-    
-    # Filtros Globales de Fecha (Afectan a módulo financiero)
-    st.header("🗓️ Filtros Globales")
-    date_range = st.date_input(
-        "Rango de Análisis",
-        value=(datetime(2023, 10, 1), datetime(2023, 10, 31))
-    )
-    
-    st.markdown("---")
-    st.info("**Versión 2.0 (Pro)**\n\nIncluye análisis de sensibilidad y BSC.")
+    st.info("Sistema conectado a Pipeline y Pricing en tiempo real.")
 
-# --- TABS PRINCIPALES ---
-tab1, tab2, tab3, tab4 = st.tabs([
-    "📂 Datos & Carga", 
-    "💰 Finanzas Profundas", 
-    "🏷️ Pricing & Escenarios", 
-    "🚦 Balanced Scorecard"
-])
-
-# ==========================================
-# TAB 1: GESTIÓN DE DATOS (DATA MANAGEMENT)
-# ==========================================
-with tab1:
-    st.header("Gestión de Bases de Datos")
-    st.markdown("Descarga templates, sube tus históricos o edita en vivo.")
+# ==============================================================================
+# MÓDULO 1: OPERACIONES DIARIAS (GASTOS E INGRESOS NIC/IFRS)
+# ==============================================================================
+if menu == "1. Operaciones Diarias (Gastos)":
+    st.header("📝 Registro de Operaciones (Norma IFRS)")
+    st.markdown("Ingrese los movimientos diarios para alimentar la contabilidad y flujos de caja.")
     
-    col_d1, col_d2 = st.columns(2)
-    
-    # --- SECCIÓN FINANCIERA ---
-    with col_d1:
-        st.subheader("1. Base Financiera")
+    with st.container():
+        col1, col2 = st.columns([1, 2])
         
-        # Generar Template
-        df_fin_template = pd.DataFrame(columns=['Fecha', 'Concepto', 'Tipo', 'Categoria', 'Comportamiento', 'Monto', 'Proyecto'])
-        excel_fin = convert_df_to_excel(df_fin_template)
-        
-        st.download_button(
-            label="📥 Descargar Template Finanzas (.xlsx)",
-            data=excel_fin,
-            file_name='template_finanzas_qd.xlsx',
-            mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            help="Usa este archivo para cargar tus datos históricos."
-        )
-        
-        # Cargar Datos
-        uploaded_fin = st.file_uploader("Subir Excel Finanzas", type=['xlsx', 'csv'])
-        if uploaded_fin:
-            try:
-                if uploaded_fin.name.endswith('.csv'):
-                    df_new = pd.read_csv(uploaded_fin)
-                else:
-                    df_new = pd.read_excel(uploaded_fin)
+        with col1:
+            st.subheader("Nuevo Movimiento")
+            with st.form("expense_form", clear_on_submit=True):
+                fecha = st.date_input("Fecha Comprobante")
+                concepto = st.text_input("Concepto / Glosa")
                 
-                # Validación básica
-                required_cols = ['Fecha', 'Tipo', 'Monto', 'Comportamiento']
-                if all(col in df_new.columns for col in required_cols):
-                    st.session_state['financial_data'] = df_new
-                    st.success("✅ Base Financiera actualizada correctamente.")
-                else:
-                    st.error(f"❌ El archivo debe contener las columnas: {required_cols}")
-            except Exception as e:
-                st.error(f"Error al procesar archivo: {e}")
+                # Lógica de autocompletado
+                sugerencia_nic = classify_expense_auto(concepto) if concepto else "Otros Gastos Operacionales"
+                
+                entidad = st.text_input("Entidad (Proveedor/Cliente/Empleado)")
+                
+                tipo_mov = st.selectbox("Tipo de Movimiento", ["Gasto", "Ingreso", "Activo (Inversión)", "Pasivo (Deuda)", "Patrimonio"])
+                
+                # Lista NIC extendida
+                opciones_nic = [
+                    "Ingresos Ordinarios", "Costo de Ventas", 
+                    "Gastos de Administración", "Gastos de Ventas", "Beneficios a Empleados",
+                    "Gastos Financieros", "Gastos por Arrendamiento (NIIF 16)", 
+                    "Propiedad, Planta y Equipo", "Efectivo y Equivalentes",
+                    "Cuentas por Cobrar", "Cuentas por Pagar", "Impuestos por Pagar"
+                ]
+                
+                # Preseleccionar si hay coincidencia
+                idx_sel = opciones_nic.index(sugerencia_nic) if sugerencia_nic in opciones_nic else 0
+                clasificacion = st.selectbox("Clasificación IFRS/NIC", opciones_nic, index=idx_sel)
+                
+                col_amt, col_tax = st.columns(2)
+                monto = col_amt.number_input("Monto Total (Bruto)", min_value=0.0, format="%.2f")
+                es_egreso = tipo_mov in ["Gasto", "Activo (Inversión)"] # Lógica simplificada signo
+                
+                proyecto = st.selectbox("Centro de Costo / Proyecto", ["General"] + st.session_state['pipeline']['Proyecto'].unique().tolist())
+                estado = st.selectbox("Estado Flujo", ["Pagado/Cobrado", "Pendiente (Devengado)"])
+                
+                obs = st.text_area("Detalle / ID Comprobante")
+                
+                submitted = st.form_submit_button("💾 Registrar Asiento")
+                
+                if submitted:
+                    signo = -1 if es_egreso else 1
+                    nuevo_asiento = {
+                        'Fecha': datetime.combine(fecha, datetime.min.time()),
+                        'Concepto': concepto,
+                        'Entidad': entidad,
+                        'Tipo': tipo_mov,
+                        'Clasificacion_NIC': clasificacion,
+                        'Monto': monto * signo,
+                        'Proyecto': proyecto,
+                        'Estado': estado
+                    }
+                    st.session_state['ledger'] = pd.concat([st.session_state['ledger'], pd.DataFrame([nuevo_asiento])], ignore_index=True)
+                    st.success("Movimiento registrado en Libro Diario.")
 
-        # Editor CRUD
-        st.markdown("**Edición en Vivo:**")
-        edited_fin = st.data_editor(
-            st.session_state['financial_data'], 
-            num_rows="dynamic",
-            column_config={
-                "Tipo": st.column_config.SelectboxColumn(options=["Ingreso", "Egreso"]),
-                "Comportamiento": st.column_config.SelectboxColumn(options=["Fijo", "Variable"], help="Vital para cálculo de Punto de Equilibrio"),
-                "Fecha": st.column_config.DatetimeColumn(format="D/M/YYYY")
-            },
-            key="editor_fin"
-        )
-        st.session_state['financial_data'] = edited_fin
-
-    # --- SECCIÓN COMERCIAL ---
-    with col_d2:
-        st.subheader("2. Pipeline Comercial")
-        
-        df_com_template = pd.DataFrame(columns=['Cliente', 'Servicio', 'Etapa', 'Valor', 'Probabilidad'])
-        excel_com = convert_df_to_excel(df_com_template)
-        
-        st.download_button(
-            label="📥 Descargar Template Pipeline (.xlsx)",
-            data=excel_com,
-            file_name='template_pipeline_qd.xlsx',
-            mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        )
-        
-        uploaded_com = st.file_uploader("Subir Excel Pipeline", type=['xlsx', 'csv'])
-        if uploaded_com:
-            try:
-                df_new_com = pd.read_excel(uploaded_com) if uploaded_com.name.endswith('.xlsx') else pd.read_csv(uploaded_com)
-                st.session_state['commercial_data'] = df_new_com
-                st.success("✅ Pipeline actualizado.")
-            except Exception as e:
-                st.error(f"Error: {e}")
-
-        st.markdown("**Edición en Vivo:**")
-        edited_com = st.data_editor(
-            st.session_state['commercial_data'],
-            num_rows="dynamic",
-            column_config={
-                "Etapa": st.column_config.SelectboxColumn(options=["Lead", "Propuesta", "Negociación", "Ganado", "Perdido"]),
-                "Probabilidad": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%d%%")
-            },
-            key="editor_com"
-        )
-        st.session_state['commercial_data'] = edited_com
-
-# ==========================================
-# TAB 2: FINANZAS AVANZADAS (DEEP FINANCE)
-# ==========================================
-with tab2:
-    st.header("Análisis Financiero Profundo")
-    
-    # 1. Preparación de Datos
-    df = st.session_state['financial_data'].copy()
-    
-    # Convertir a datetime si no lo es
-    df['Fecha'] = pd.to_datetime(df['Fecha'])
-    
-    # Filtro por fecha (Sidebar)
-    if len(date_range) == 2:
-        mask = (df['Fecha'].dt.date >= date_range[0]) & (df['Fecha'].dt.date <= date_range[1])
-        df_filtered = df.loc[mask]
-    else:
-        df_filtered = df
-
-    if df_filtered.empty:
-        st.warning("⚠️ No hay datos en el rango de fechas seleccionado.")
-    else:
-        # CÁLCULOS PRINCIPALES
-        total_ingresos = df_filtered[df_filtered['Tipo'] == 'Ingreso']['Monto'].sum()
-        total_egresos = df_filtered[df_filtered['Tipo'] == 'Egreso']['Monto'].sum()
-        
-        # Desglose Costos
-        costos_variables = df_filtered[(df_filtered['Tipo'] == 'Egreso') & (df_filtered['Comportamiento'] == 'Variable')]['Monto'].sum()
-        costos_fijos = df_filtered[(df_filtered['Tipo'] == 'Egreso') & (df_filtered['Comportamiento'] == 'Fijo')]['Monto'].sum()
-        
-        margen_contribucion = total_ingresos - costos_variables
-        utilidad_neta = total_ingresos - total_egresos
-        
-        # Ratios
-        margen_bruto_pct = (margen_contribucion / total_ingresos * 100) if total_ingresos > 0 else 0
-        margen_neto_pct = (utilidad_neta / total_ingresos * 100) if total_ingresos > 0 else 0
-        
-        # Punto de Equilibrio (Break-even Point)
-        # Fórmula: Costos Fijos / (Ratio Margen Contribución)
-        ratio_mc = margen_contribucion / total_ingresos if total_ingresos > 0 else 0
-        punto_equilibrio = costos_fijos / ratio_mc if ratio_mc > 0 else 0
-
-        # --- PANEL DE INDICADORES ---
-        col_k1, col_k2, col_k3, col_k4 = st.columns(4)
-        col_k1.metric("Ingresos Totales", f"${total_ingresos:,.0f}", delta=f"{len(df_filtered)} movs")
-        col_k2.metric("EBITDA / Margen Op.", f"${(total_ingresos - costos_variables - (costos_fijos*0.8)):,.0f}", help="Estimado simplificado") # Simplificación
-        col_k3.metric("Utilidad Neta", f"${utilidad_neta:,.0f}", delta=f"{margen_neto_pct:.1f}%")
-        col_k4.metric("Punto de Equilibrio", f"${punto_equilibrio:,.0f}", help="Ventas necesarias para cubrir costos fijos y variables", delta_color="off")
-
-        st.divider()
-
-        # --- SECCIÓN DE LIQUIDEZ (Input Manual Simulado) ---
-        col_liq, col_graph = st.columns([1, 2])
-        
-        with col_liq:
-            st.subheader("💧 Análisis de Liquidez")
-            st.caption("Como el Balance General no se genera solo con P&L, ingresa saldos actuales:")
-            activo_cte = st.number_input("Activo Corriente (Caja + CxC)", value=25000000)
-            pasivo_cte = st.number_input("Pasivo Corriente (CxP Corto Plazo)", value=12000000)
+        with col2:
+            st.subheader("📖 Libro Diario (Últimos Movimientos)")
+            df_ledger = st.session_state['ledger'].sort_values('Fecha', ascending=False)
             
-            razon_corriente = activo_cte / pasivo_cte if pasivo_cte > 0 else 0
-            st.metric("Razón Corriente", f"{razon_corriente:.2f}", delta="Objetivo > 1.5", delta_color="normal" if razon_corriente > 1.5 else "inverse")
+            # Filtros rápidos
+            f_proyecto = st.multiselect("Filtrar por Proyecto", df_ledger['Proyecto'].unique())
+            if f_proyecto:
+                df_ledger = df_ledger[df_ledger['Proyecto'].isin(f_proyecto)]
+                
+            st.dataframe(
+                df_ledger[['Fecha', 'Concepto', 'Tipo', 'Clasificacion_NIC', 'Monto', 'Estado']], 
+                use_container_width=True,
+                height=500
+            )
+
+# ==============================================================================
+# MÓDULO 2: FINANZAS DEEP DIVE (ESTADOS FINANCIEROS)
+# ==============================================================================
+elif menu == "2. Finanzas Deep Dive":
+    st.header("📊 Estados Financieros & Análisis Profundo")
+    
+    # Controles de Periodo
+    c_per1, c_per2 = st.columns([1, 4])
+    agrupacion = c_per1.selectbox("Agrupar por:", ["M", "Q", "Y"], format_func=lambda x: {"M":"Mensual", "Q":"Trimestral", "Y":"Anual"}[x])
+    
+    df = st.session_state['ledger'].copy()
+    df['Periodo'] = df['Fecha'].dt.to_period(agrupacion).astype(str)
+    
+    tabs_fin = st.tabs(["📉 Estado de Resultados (P&L)", "⚖️ Balance General", "💸 Flujo de Caja", "📈 Indicadores KPI"])
+    
+    with tabs_fin[0]: # P&L
+        st.subheader("Estado de Resultados Integral")
+        # Filtrar solo Ingresos y Gastos
+        df_pnl = df[df['Tipo'].isin(['Ingreso', 'Gasto'])]
+        
+        pivot_pnl = df_pnl.pivot_table(index='Clasificacion_NIC', columns='Periodo', values='Monto', aggfunc='sum', fill_value=0)
+        
+        # Ordenar filas lógicas
+        ingresos = pivot_pnl.loc[pivot_pnl.index.str.contains('Ingresos')].sum()
+        costos = pivot_pnl.loc[pivot_pnl.index.str.contains('Costo') | pivot_pnl.index.str.contains('Beneficios')].sum()
+        gastos = pivot_pnl.loc[pivot_pnl.index.str.contains('Gastos')].sum()
+        
+        res_operacional = ingresos + costos + gastos # Suma porque gastos son negativos
+        
+        st.dataframe(pivot_pnl.style.format("${:,.0f}").background_gradient(cmap="RdYlGn", axis=None), use_container_width=True)
+        
+        st.markdown("#### Resultado Operacional del Periodo")
+        fig_res = px.bar(x=res_operacional.index, y=res_operacional.values, title="Utilidad/Pérdida Neta por Periodo")
+        st.plotly_chart(fig_res, use_container_width=True)
+
+    with tabs_fin[1]: # Balance
+        st.subheader("Balance Financiero (Situación)")
+        # Lógica simplificada de acumulación de saldos
+        df_bal = df[df['Tipo'].isin(['Activo', 'Pasivo', 'Patrimonio', 'Activo (Inversión)', 'Pasivo (Deuda)'])]
+        pivot_bal = df_bal.pivot_table(index='Clasificacion_NIC', columns='Periodo', values='Monto', aggfunc='sum').cumsum(axis=1).fillna(0)
+        st.dataframe(pivot_bal.style.format("${:,.0f}"), use_container_width=True)
+        
+    with tabs_fin[2]: # Cash Flow
+        st.subheader("Flujo de Caja (Método Directo)")
+        # Filtrar solo lo efectivamente pagado/cobrado
+        df_cash = df[df['Estado'] == 'Pagado/Cobrado']
+        cash_flow = df_cash.groupby('Periodo')['Monto'].sum()
+        
+        col_cf1, col_cf2 = st.columns([3,1])
+        with col_cf1:
+            fig_cf = go.Figure()
+            fig_cf.add_trace(go.Waterfall(
+                x = cash_flow.index, y = cash_flow.values,
+                connector = {"line":{"color":"rgb(63, 63, 63)"}},
+            ))
+            st.plotly_chart(fig_cf, use_container_width=True)
+        with col_cf2:
+            st.metric("Caja Neta Periodo Actual", f"${cash_flow.iloc[-1]:,.0f}" if len(cash_flow)>0 else "$0")
+
+    with tabs_fin[3]: # KPIs
+        st.subheader("Indicadores de Salud Financiera")
+        # Simulación de ratios ya que faltan datos de balance completo doble partida
+        ingresos_tot = df[df['Tipo']=='Ingreso']['Monto'].sum()
+        costos_tot = df[df['Tipo']=='Gasto']['Monto'].sum()
+        margen_neto = (ingresos_tot + costos_tot) / ingresos_tot if ingresos_tot > 0 else 0
+        
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric("Margen Neto Histórico", f"{margen_neto*100:.1f}%")
+        k2.metric("Burn Rate Promedio", f"${abs(costos_tot/len(df['Periodo'].unique())):,.0f}/mes")
+        k3.metric("Ratio Cobertura", "1.2x", delta="Simulado")
+        k4.metric("ROI Proyectos", "18%", delta="Simulado")
+
+# ==============================================================================
+# MÓDULO 3: PRICING AVANZADO Y CARTERA DE PROYECTOS
+# ==============================================================================
+elif menu == "3. Pricing & Cartera":
+    st.header("🏷️ Pricing Estructurado & Cartera")
+    
+    subtabs_pricing = st.tabs(["🧮 Calculadora & Cotizador", "📂 Cartera de Proyectos", "⚙️ Librería de Variables"])
+    
+    with subtabs_pricing[0]:
+        col_calc1, col_calc2 = st.columns([1, 1])
+        
+        with col_calc1:
+            st.subheader("1. Definición del Proyecto")
+            p_nombre = st.text_input("Nombre del Proyecto / Propuesta")
+            p_cliente = st.selectbox("Cliente", ["Nuevo"] + st.session_state['pipeline']['Cliente'].unique().tolist())
             
-            if razon_corriente < 1:
-                st.error("⚠️ Alerta: Problemas potenciales de liquidez.")
+            st.subheader("2. Estructura de Costos Variables")
+            # Selector de variables desde librería
+            lib = st.session_state['cost_library']
+            add_item = st.selectbox("Agregar Variable desde Librería", lib['Nombre'].tolist())
+            
+            if 'temp_pricing_items' not in st.session_state:
+                st.session_state['temp_pricing_items'] = []
+
+            c_add1, c_add2 = st.columns(2)
+            qty = c_add1.number_input("Cantidad", value=1)
+            if c_add2.button("Añadir Item"):
+                item_data = lib[lib['Nombre'] == add_item].iloc[0]
+                st.session_state['temp_pricing_items'].append({
+                    'Item': add_item, 'Cantidad': qty, 'Costo_Unit': item_data['Costo_Unitario'],
+                    'Subtotal': qty * item_data['Costo_Unitario'], 'Categoria': item_data['Categoria']
+                })
+            
+            # Tabla de items añadidos
+            if st.session_state['temp_pricing_items']:
+                df_items = pd.DataFrame(st.session_state['temp_pricing_items'])
+                st.dataframe(df_items, height=150)
+                costo_directo_total = df_items['Subtotal'].sum()
             else:
-                st.success("✅ Liquidez Saludable.")
+                costo_directo_total = 0
+                st.info("Agregue items de costo para calcular.")
 
-        with col_graph:
-            st.subheader("Evolución Ingresos vs Gastos")
-            # Agrupar por mes
-            df_chart = df_filtered.copy()
-            df_chart['Mes'] = df_chart['Fecha'].dt.strftime('%Y-%m')
-            grouped = df_chart.groupby(['Mes', 'Tipo'])['Monto'].sum().reset_index()
+        with col_calc2:
+            st.subheader("3. Rentabilidad y Precio")
+            st.metric("Costo Directo Total", f"${costo_directo_total:,.0f}")
             
-            fig_line = px.line(grouped, x='Mes', y='Monto', color='Tipo', markers=True, 
-                               color_discrete_map={'Ingreso': '#28a745', 'Egreso': '#dc3545'})
-            st.plotly_chart(fig_line, use_container_width=True)
+            overhead_pct = st.slider("Overhead / Indirectos (%)", 0, 50, 20)
+            costo_full = costo_directo_total * (1 + overhead_pct/100)
+            
+            margen_target = st.slider("Margen Objetivo (%)", 10, 80, 35)
+            precio_venta = costo_full / (1 - margen_target/100) if margen_target < 100 else 0
+            
+            st.markdown(f"""
+            <div style="background-color:#e8f4f8; padding:15px; border-radius:10px; text-align:center;">
+                <h3>Precio Sugerido</h3>
+                <h1 style="color:#007bff;">${precio_venta:,.0f}</h1>
+                <small>Margen Neto: ${(precio_venta - costo_full):,.0f}</small>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            horas_est = st.number_input("Horas Estimadas Totales", value=100)
+            
+            if st.button("💾 Guardar Proyecto en Cartera"):
+                new_proj = {
+                    'Nombre_Proyecto': p_nombre,
+                    'Cliente': p_cliente,
+                    'Estado': 'En Evaluación',
+                    'Ingresos_Est': precio_venta,
+                    'Costos_Directos_Est': costo_directo_total,
+                    'Margen_Est': (precio_venta - costo_full)/precio_venta,
+                    'Horas_Est': horas_est,
+                    'Horas_Reales': 0,
+                    'Fecha_Inicio': datetime.now()
+                }
+                st.session_state['projects_db'] = pd.concat([st.session_state['projects_db'], pd.DataFrame([new_proj])], ignore_index=True)
+                st.session_state['temp_pricing_items'] = [] # Reset
+                st.success("Proyecto guardado exitosamente.")
 
-        # --- GRÁFICO SUNBURST ---
-        st.subheader("🔍 Desglose de Egresos (Drill-down)")
-        df_egresos = df_filtered[df_filtered['Tipo'] == 'Egreso']
-        if not df_egresos.empty:
-            fig_sun = px.sunburst(df_egresos, path=['Categoria', 'Concepto'], values='Monto', 
-                                  color='Categoria', title="¿En qué se gasta el dinero?")
-            st.plotly_chart(fig_sun, use_container_width=True)
+    with subtabs_pricing[1]:
+        st.subheader("Cartera de Proyectos (Portfolio)")
+        df_projs = st.session_state['projects_db']
+        if not df_projs.empty:
+            # Cálculo de variables visuales
+            df_projs['Rentabilidad %'] = (df_projs['Margen_Est'] * 100).map('{:.1f}%'.format)
+            
+            st.dataframe(
+                df_projs[['Nombre_Proyecto', 'Cliente', 'Estado', 'Ingresos_Est', 'Rentabilidad %', 'Horas_Est']],
+                use_container_width=True
+            )
+            
+            # Gráfico de burbujas: Rentabilidad vs Ingreso vs Horas
+            fig_bubble = px.scatter(df_projs, x="Ingresos_Est", y="Margen_Est", size="Horas_Est", color="Estado",
+                                   hover_name="Nombre_Proyecto", title="Mapa de Cartera: Valor vs Rentabilidad vs Esfuerzo")
+            st.plotly_chart(fig_bubble, use_container_width=True)
         else:
-            st.info("No hay egresos registrados para mostrar.")
+            st.info("No hay proyectos guardados en la cartera.")
 
-# ==========================================
-# TAB 3: PRICING & SIMULADOR
-# ==========================================
-with tab3:
-    st.header("🧪 Simulador de Estrategia de Precios")
-    
-    col_p1, col_p2 = st.columns([1, 2])
-    
-    with col_p1:
-        st.subheader("1. Estructura de Costos")
-        
-        costo_hh = st.number_input("Costo Hora Hombre (Promedio)", value=35000)
-        horas = st.number_input("Horas Estimadas Proyecto", value=100)
-        materiales = st.number_input("Costos Directos (Licencias/Viáticos)", value=500000)
-        overhead = st.slider("Overhead / Indirectos (%)", 0, 50, 15)
-        
-        costo_directo = (costo_hh * horas) + materiales
-        costo_total = costo_directo * (1 + overhead/100)
-        
-        st.metric("Costo Base Total", f"${costo_total:,.0f}")
-        
-        margen_objetivo = st.slider("Margen Objetivo (%)", 10, 80, 30)
-        precio_sugerido = costo_total / (1 - margen_objetivo/100)
-        
-        st.markdown(f"**Precio Sugerido:** :blue[${precio_sugerido:,.0f}]")
-        
-    with col_p2:
-        st.subheader("2. Análisis de Sensibilidad & Mercado")
-        
-        precio_mercado = st.number_input("Precio Mercado (Competencia/Benchmark)", value=precio_sugerido * 0.95)
-        
-        # Slider de Sensibilidad
-        sensibilidad = st.slider("Variación de Precio (Escenario What-If)", -20, 20, 0, format="%d%%")
-        
-        precio_simulado = precio_sugerido * (1 + sensibilidad/100)
-        margen_simulado_monto = precio_simulado - costo_total
-        margen_simulado_pct = (margen_simulado_monto / precio_simulado * 100)
-        
-        # Resultados de Simulación
-        c_res1, c_res2, c_res3 = st.columns(3)
-        c_res1.metric("Precio Simulado", f"${precio_simulado:,.0f}", delta=f"{sensibilidad}%")
-        c_res2.metric("Nuevo Margen $", f"${margen_simulado_monto:,.0f}")
-        
-        color_delta = "normal" if margen_simulado_pct >= margen_objetivo else "inverse"
-        c_res3.metric("Nuevo Margen %", f"{margen_simulado_pct:.1f}%", delta=f"Obj: {margen_objetivo}%", delta_color=color_delta)
-        
-        # Gráfico Comparativo
-        data_sim = pd.DataFrame({
-            'Escenario': ['Costo Base', 'Mercado', 'Precio Sugerido', 'Precio Simulado'],
-            'Monto': [costo_total, precio_mercado, precio_sugerido, precio_simulado],
-            'Color': ['grey', 'orange', 'blue', 'green']
-        })
-        
-        fig_bar = px.bar(data_sim, x='Escenario', y='Monto', color='Escenario', text_auto='.2s', 
-                         color_discrete_map={'Costo Base':'grey', 'Mercado':'orange', 'Precio Sugerido':'blue', 'Precio Simulado':'green'})
-        fig_bar.add_hline(y=costo_total, line_dash="dot", annotation_text="Break-even Proyecto")
-        st.plotly_chart(fig_bar, use_container_width=True)
+    with subtabs_pricing[2]:
+        st.subheader("Gestión de Variables de Pricing")
+        edited_lib = st.data_editor(st.session_state['cost_library'], num_rows="dynamic")
+        st.session_state['cost_library'] = edited_lib
 
-# ==========================================
-# TAB 4: BALANCED SCORECARD (BSC)
-# ==========================================
-with tab4:
-    st.header("🚦 Tablero de Mando Integral (BSC)")
-    st.markdown("Visión holística de la empresa con indicadores Cuantitativos (Auto) y Cualitativos (Manual).")
+# ==============================================================================
+# MÓDULO 4: PROYECCIONES Y ESCENARIOS (INTEGRACIÓN)
+# ==============================================================================
+elif menu == "4. Proyecciones & Escenarios":
+    st.header("🔮 Simulador de Escenarios Financieros")
+    st.markdown("Proyección basada en: **Datos Actuales + Pipeline (Ponderado) + Cartera Pricing**")
     
-    # --- 1. PERSPECTIVA FINANCIERA (Automático) ---
-    st.subheader("1. Perspectiva Financiera")
-    # Traemos datos calculados del Tab 2
-    ingresos_mes = df_filtered[df_filtered['Tipo'] == 'Ingreso']['Monto'].sum()
-    meta_ingresos = st.number_input("Meta Ingresos (Mes)", value=20000000)
+    col_sc1, col_sc2 = st.columns([1, 3])
     
-    col_f1, col_f2 = st.columns(2)
-    color_fin = get_semaphor_color(ingresos_mes, meta_ingresos)
-    col_f1.markdown(f"#### Ingresos: :{color_fin}[${ingresos_mes:,.0f}] / ${meta_ingresos:,.0f}")
-    col_f1.progress(min(ingresos_mes/meta_ingresos, 1.0))
+    with col_sc1:
+        st.subheader("Configuración Escenario")
+        escenario = st.selectbox("Escenario Base", ["Conservador", "Realista", "Optimista"])
+        
+        # Factores de ajuste según escenario
+        if escenario == "Conservador":
+            factor_prob = 0.8
+            factor_costo = 1.1
+        elif escenario == "Optimista":
+            factor_prob = 1.2
+            factor_costo = 0.95
+        else:
+            factor_prob = 1.0
+            factor_costo = 1.0
+            
+        st.markdown("**Proyectos Nuevos a Incluir:**")
+        incluir_pipeline = st.checkbox("Incluir Pipeline CRM", value=True)
+        incluir_pricing = st.checkbox("Incluir Proyectos Evaluados (Pricing)", value=True)
+        
+        st.divider()
+        st.metric("Capacidad Horas Disp.", st.session_state['config']['capacidad_horas_mensual'])
+
+    with col_sc2:
+        # 1. Base Actual (Promedio mensual de ingresos/gastos fijos)
+        base_income = 15000000 # Simulado promedio
+        base_fixed_cost = 8000000 # Simulado promedio
+        
+        # 2. Delta Proyectos Nuevos
+        delta_ingreso = 0
+        delta_costo = 0
+        delta_horas = 0
+        
+        if incluir_pipeline:
+            # Sumar valor ponderado del pipeline
+            pipe = st.session_state['pipeline']
+            delta_ingreso += (pipe['Valor'] * (pipe['Probabilidad']/100) * factor_prob).sum()
+            delta_horas += pipe['Horas_Est'].sum()
+        
+        if incluir_pricing:
+            # Sumar proyectos guardados en estado evaluación
+            projs = st.session_state['projects_db']
+            eval_projs = projs[projs['Estado'] == 'En Evaluación']
+            # Asumimos 50% probabilidad por defecto para items de pricing sin CRM
+            delta_ingreso += (eval_projs['Ingresos_Est'] * 0.5 * factor_prob).sum()
+            delta_costo += (eval_projs['Costos_Directos_Est'] * factor_costo).sum()
+            delta_horas += eval_projs['Horas_Est'].sum()
+            
+        # 3. Resultados Proyectados
+        ingreso_proj = base_income + delta_ingreso
+        egreso_proj = base_fixed_cost + delta_costo
+        utilidad_proj = ingreso_proj - egreso_proj
+        
+        # Alerta de Capacidad
+        horas_totales = 400 + delta_horas # 400 base + nuevos
+        capacidad = st.session_state['config']['capacidad_horas_mensual']
+        
+        if horas_totales > capacidad:
+            st.error(f"🚨 INCONSISTENCIA: Las horas requeridas ({horas_totales}) superan la capacidad ({capacidad}). Se requiere contratación o outsourcing.")
+        else:
+            st.success(f"✅ Capacidad operativa suficiente ({int(horas_totales/capacidad*100)}% ocupación).")
+            
+        # Comparativa Visual
+        st.subheader("Estado de Resultados Proyectado (Mensualizado)")
+        
+        col_res1, col_res2, col_res3 = st.columns(3)
+        col_res1.metric("Ingresos Proyectados", f"${ingreso_proj:,.0f}", delta=f"${delta_ingreso:,.0f} vs Base")
+        col_res2.metric("EBITDA Proyectado", f"${utilidad_proj:,.0f}")
+        col_res3.metric("Costo de Oportunidad", f"${utilidad_proj * 0.15:,.0f}", help="Retorno extra si invertimos el capital en fondo libre de riesgo")
+
+        # Gráfico Waterfall
+        fig_water = go.Figure(go.Waterfall(
+            orientation = "v",
+            measure = ["relative", "relative", "relative", "total"],
+            x = ["Base Actual", "Nuevos Negocios (CRM)", "Proyectos Pricing", "Total Proyectado"],
+            y = [base_income, 
+                 (st.session_state['pipeline']['Valor'] * 0.7).sum() if incluir_pipeline else 0,
+                 (eval_projs['Ingresos_Est']*0.5).sum() if incluir_pricing else 0,
+                 0], # El total se calcula solo si pongo el ultimo valor, aqui es simplificado
+            connector = {"line":{"color":"rgb(63, 63, 63)"}},
+        ))
+        # Ajuste manual para el waterfall visual correcto
+        fig_water = px.bar(x=["Base", "Impacto CRM", "Impacto Pricing", "Total"], 
+                           y=[base_income, delta_ingreso*0.6, delta_ingreso*0.4, ingreso_proj],
+                           title="Composición del Crecimiento Proyectado")
+        
+        st.plotly_chart(fig_water, use_container_width=True)
+
+# ==============================================================================
+# MÓDULO 5: TABLERO DE CONTROL (BSC INTEGRADO)
+# ==============================================================================
+elif menu == "5. Tablero BSC":
+    st.header("🚦 Balanced Scorecard Integrado")
     
-    col_f2.metric("Estado Financiero", "En curso", delta="Datos reales", delta_color="off")
+    # Datos integrados
+    ingresos_reales = st.session_state['ledger'][st.session_state['ledger']['Tipo']=='Ingreso']['Monto'].sum()
+    meta_ingresos = 60000000 # Meta hardcodeada para ejemplo
+    
+    pipeline_val = st.session_state['pipeline']['Valor'].sum()
+    
+    c1, c2 = st.columns(2)
+    
+    with c1:
+        st.subheader("Perspectiva Financiera")
+        st.progress(min(ingresos_reales/meta_ingresos, 1.0))
+        st.caption(f"Avance Meta Ingresos: ${ingresos_reales:,.0f} / ${meta_ingresos:,.0f}")
+        
+    with c2:
+        st.subheader("Perspectiva Clientes")
+        st.metric("Valor Pipeline Activo", f"${pipeline_val:,.0f}")
+        st.metric("Proyectos en Cartera", len(st.session_state['projects_db']))
 
     st.markdown("---")
-
-    # --- 2. PERSPECTIVA CLIENTES (Híbrido) ---
-    st.subheader("2. Perspectiva Clientes")
-    col_c1, col_c2 = st.columns(2)
-    
-    # Dato Cuantitativo (CRM)
-    df_crm = st.session_state['commercial_data']
-    ganadas = len(df_crm[df_crm['Etapa']=='Ganado'])
-    total_cerradas = len(df_crm[df_crm['Etapa'].isin(['Ganado', 'Perdido'])])
-    win_rate = (ganadas / total_cerradas * 100) if total_cerradas > 0 else 0
-    
-    col_c1.metric("Win Rate (Tasa Cierre)", f"{win_rate:.1f}%", delta="Obj: >30%")
-    
-    # Dato Cualitativo (Input)
-    nps = col_c2.slider("NPS / Satisfacción Cliente (0-100)", 0, 100, 75)
-    color_nps = get_semaphor_color(nps, 70)
-    col_c2.markdown(f"**Salud Cliente:** :{color_nps}[{'Excelente' if nps>70 else 'Mejorable'}]")
-
-    st.markdown("---")
-
-    # --- 3. PERSPECTIVA PROCESOS INTERNOS (Manual) ---
-    st.subheader("3. Perspectiva Procesos Internos")
-    col_p1, col_p2 = st.columns(2)
-    
-    tiempo_entrega = col_p1.number_input("Tiempo Promedio Entrega (Días)", value=15)
-    meta_entrega = 12
-    color_proc = get_semaphor_color(tiempo_entrega, meta_entrega, inverse=True) # Menos es mejor
-    
-    col_p1.markdown(f"Performance Entrega: :{color_proc}[{'Dentro de meta' if tiempo_entrega <= meta_entrega else 'Retraso'}]")
-    
-    eficiencia = col_p2.slider("Índice de Eficiencia Operativa (%)", 0, 100, 85)
-    col_p2.progress(eficiencia/100)
-
-    st.markdown("---")
-
-    # --- 4. PERSPECTIVA APRENDIZAJE Y CRECIMIENTO (Cualitativo) ---
-    st.subheader("4. Aprendizaje y Crecimiento")
-    col_l1, col_l2 = st.columns(2)
-    
-    clima = col_l1.select_slider("Clima Laboral", options=["Crítico", "Tenso", "Neutro", "Bueno", "Excelente"], value="Bueno")
-    color_clima = "green" if clima in ["Bueno", "Excelente"] else "red"
-    col_l1.markdown(f"Estado Equipo: :{color_clima}[{clima}]")
-    
-    capacitacion = col_l2.number_input("% Equipo Capacitado este Q", 0, 100, 40)
-    col_l2.metric("Cobertura Capacitación", f"{capacitacion}%", delta="Meta: 50%")
+    st.info("Este tablero se alimenta automáticamente de los módulos de Operaciones, CRM y Pricing.")
