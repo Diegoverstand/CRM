@@ -624,4 +624,85 @@ elif menu == "5. Estrategia & Evaluación":
 
     with tabs_strat[1]:
         st.subheader("Simulación Monte Carlo")
-        if st.button("Ejecutar S
+        if st.button("Ejecutar Simulación"):
+            res = FinancialEngine.monte_carlo_simulation(flujo_est, flujo_est*0.5, inv, tasa, 0.27)
+            fig_hist = px.histogram(x=res, title="Distribución de VPN", color_discrete_sequence=['#6366f1'])
+            fig_hist.update_layout(template="plotly_dark")
+            st.plotly_chart(fig_hist, use_container_width=True)
+
+# =============================================================================
+# MÓDULO 6: BALANCED SCORECARD
+# =============================================================================
+elif menu == "6. Balanced Scorecard":
+    st.header("🚦 Cuadro de Mando Integral (BSC)")
+    
+    df_l = st.session_state['ledger']
+    ingresos_tot = df_l[df_l['Tipo']=='Ingreso']['Monto'].sum()
+    ebitda_val = ingresos_tot - abs(df_l[df_l['Tipo']=='Gasto']['Monto'].sum())
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        with st.container(border=True):
+            st.subheader("1. Financiera")
+            st.metric("Ingresos Totales", f"${ingresos_tot:,.0f}")
+            st.metric("EBITDA", f"${ebitda_val:,.0f}")
+            st.progress(0.7)
+            
+    with col2:
+        with st.container(border=True):
+            st.subheader("2. Clientes")
+            pipe_val = st.session_state['pipeline']['Valor'].sum()
+            st.metric("Valor Pipeline", f"${pipe_val:,.0f}")
+            st.metric("NPS", "75/100")
+            st.progress(0.8)
+
+    col3, col4 = st.columns(2)
+    with col3:
+        with st.container(border=True):
+            st.subheader("3. Procesos")
+            st.metric("Eficiencia", "85%")
+            st.metric("Entregas a Tiempo", "95%")
+            st.progress(0.85)
+            
+    with col4:
+        with st.container(border=True):
+            st.subheader("4. Aprendizaje")
+            st.metric("Clima Laboral", "Bueno")
+            st.metric("Capacitación", "40%")
+            st.progress(0.4)
+
+# =============================================================================
+# MÓDULO 7: PROYECCIONES
+# =============================================================================
+elif menu == "7. Proyecciones":
+    st.header("🔮 Proyección de Crecimiento")
+    
+    col1, col2 = st.columns([1,3])
+    with col1:
+        with st.container(border=True):
+            st.subheader("Escenario")
+            escenario = st.selectbox("Selección", ["Conservador", "Base", "Optimista"])
+            factor = 1.2 if escenario == "Optimista" else (0.8 if escenario == "Conservador" else 1.0)
+            inc_crm = st.checkbox("Incluir CRM", True)
+            inc_pric = st.checkbox("Incluir Cartera", True)
+
+    with col2:
+        with st.container(border=True):
+            base_ingresos = 10000000
+            pipe = st.session_state['pipeline']
+            val_crm = (pipe['Valor'] * (pipe['Probabilidad']/100)).sum() * factor if inc_crm else 0
+            projs = st.session_state['projects_db']
+            val_pric = projs['Ingresos_Est'].sum() * 0.5 * factor if inc_pric and not projs.empty else 0
+            
+            total = base_ingresos + val_crm + val_pric
+            growth_rate = ((total - base_ingresos) / base_ingresos) * 100
+            
+            st.metric("Ingresos Proyectados", f"${total:,.0f}", delta=f"Crecimiento: {growth_rate:.1f}%")
+            
+            fig_w = go.Figure(go.Waterfall(
+                x = ["Base", "CRM", "Cartera", "Total"],
+                y = [base_ingresos, val_crm, val_pric, 0],
+                measure = ["relative", "relative", "relative", "total"]
+            ))
+            fig_w.update_layout(template="plotly_dark")
+            st.plotly_chart(fig_w, use_container_width=True)
