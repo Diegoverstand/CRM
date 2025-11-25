@@ -250,13 +250,19 @@ elif menu == "2. Pricing & Cartera":
     
     tabs_price = st.tabs(["Calculadora de Precios", "Cartera de Proyectos", "Librería Costos"])
     
+    # --- TAB 1: CALCULADORA ---
     with tabs_price[0]:
         c1, c2 = st.columns([1, 1])
         with c1:
             with st.container(border=True):
                 st.subheader("Configuración")
                 p_nom = st.text_input("Nombre Proyecto")
-                cliente_p = st.selectbox("Cliente", ["Nuevo"] + st.session_state['pipeline']['Cliente'].unique().tolist())
+                # Manejo seguro de cliente por si pipeline está vacío
+                lista_clientes = ["Nuevo"]
+                if 'pipeline' in st.session_state and 'Cliente' in st.session_state['pipeline'].columns:
+                    lista_clientes += st.session_state['pipeline']['Cliente'].unique().tolist()
+                
+                cliente_p = st.selectbox("Cliente", lista_clientes)
                 
                 lib = st.session_state['cost_library']
                 item = st.selectbox("Agregar Recurso", lib['Nombre'].tolist())
@@ -291,7 +297,7 @@ elif menu == "2. Pricing & Cartera":
                         'Cliente': cliente_p,
                         'Estado': 'Evaluación', 
                         'Ingresos_Est': precio, 
-                        'Costos_Directos_Est': costo_dir, # Usamos esto como Proxy de Inversión para flujo
+                        'Costos_Directos_Est': costo_dir,
                         'Margen_Est': margen/100, 
                         'Horas_Est': horas_est
                     }
@@ -299,23 +305,21 @@ elif menu == "2. Pricing & Cartera":
                     st.success("Proyecto guardado exitosamente")
                     st.session_state['temp_items'] = []
 
-with tabs_price[1]:
+    # --- TAB 2: CARTERA (CORREGIDO) ---
+    with tabs_price[1]:
         st.subheader("Cartera de Proyectos")
         df_p = st.session_state['projects_db']
         
         if not df_p.empty:
-            # --- INICIO CORRECCIÓN ERROR ---
-            # 1. Convertir forzosamente a números (por si se guardaron como texto)
+            # 1. Asegurar numéricos
             cols_numericas = ['Ingresos_Est', 'Margen_Est', 'Horas_Est']
             for col in cols_numericas:
                 if col in df_p.columns:
                     df_p[col] = pd.to_numeric(df_p[col], errors='coerce').fillna(0)
             
-            # 2. Crear una columna temporal para el tamaño (evitar ceros que rompen Plotly)
-            # Si horas es <= 0, le ponemos tamaño 1 para que no falle, pero se vea pequeña
+            # 2. Tamaño seguro para gráfico
             df_p['Size_Plot'] = df_p['Horas_Est'].apply(lambda x: max(float(x), 1.0))
-            # -------------------------------
-
+            
             st.dataframe(df_p.drop(columns=['Size_Plot'], errors='ignore'), use_container_width=True)
             
             try:
@@ -323,18 +327,19 @@ with tabs_price[1]:
                     df_p, 
                     x="Ingresos_Est", 
                     y="Margen_Est", 
-                    size="Size_Plot", # Usamos la columna segura
+                    size="Size_Plot", 
                     color="Estado", 
                     title="Mapa de Valor vs Rentabilidad",
-                    hover_data=['Nombre_Proyecto', 'Horas_Est'], # Mostrar nombre al pasar mouse
-                    labels={'Size_Plot': 'Esfuerzo (Horas)'}
+                    hover_data=['Nombre_Proyecto', 'Horas_Est'],
+                    labels={'Size_Plot': 'Esfuerzo'}
                 )
                 st.plotly_chart(fig_bub, use_container_width=True)
             except Exception as e:
-                st.warning(f"No hay suficientes datos válidos para generar el gráfico aún. ({e})")
+                st.warning("Faltan datos válidos para generar el gráfico.")
         else:
             st.info("No hay proyectos guardados.")
 
+    # --- TAB 3: LIBRERÍA ---
     with tabs_price[2]:
         render_bulk_loader('cost_library', ['Nombre', 'Unidad', 'Costo_Unitario', 'Categoria'], "Librería")
         st.data_editor(st.session_state['cost_library'], num_rows="dynamic", use_container_width=True)
