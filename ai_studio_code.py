@@ -299,13 +299,39 @@ elif menu == "2. Pricing & Cartera":
                     st.success("Proyecto guardado exitosamente")
                     st.session_state['temp_items'] = []
 
-    with tabs_price[1]:
+with tabs_price[1]:
         st.subheader("Cartera de Proyectos")
         df_p = st.session_state['projects_db']
+        
         if not df_p.empty:
-            st.dataframe(df_p, use_container_width=True)
-            fig_bub = px.scatter(df_p, x="Ingresos_Est", y="Margen_Est", size="Horas_Est", color="Estado", title="Mapa de Valor vs Rentabilidad")
-            st.plotly_chart(fig_bub, use_container_width=True)
+            # --- INICIO CORRECCIÓN ERROR ---
+            # 1. Convertir forzosamente a números (por si se guardaron como texto)
+            cols_numericas = ['Ingresos_Est', 'Margen_Est', 'Horas_Est']
+            for col in cols_numericas:
+                if col in df_p.columns:
+                    df_p[col] = pd.to_numeric(df_p[col], errors='coerce').fillna(0)
+            
+            # 2. Crear una columna temporal para el tamaño (evitar ceros que rompen Plotly)
+            # Si horas es <= 0, le ponemos tamaño 1 para que no falle, pero se vea pequeña
+            df_p['Size_Plot'] = df_p['Horas_Est'].apply(lambda x: max(float(x), 1.0))
+            # -------------------------------
+
+            st.dataframe(df_p.drop(columns=['Size_Plot'], errors='ignore'), use_container_width=True)
+            
+            try:
+                fig_bub = px.scatter(
+                    df_p, 
+                    x="Ingresos_Est", 
+                    y="Margen_Est", 
+                    size="Size_Plot", # Usamos la columna segura
+                    color="Estado", 
+                    title="Mapa de Valor vs Rentabilidad",
+                    hover_data=['Nombre_Proyecto', 'Horas_Est'], # Mostrar nombre al pasar mouse
+                    labels={'Size_Plot': 'Esfuerzo (Horas)'}
+                )
+                st.plotly_chart(fig_bub, use_container_width=True)
+            except Exception as e:
+                st.warning(f"No hay suficientes datos válidos para generar el gráfico aún. ({e})")
         else:
             st.info("No hay proyectos guardados.")
 
